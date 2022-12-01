@@ -11,6 +11,7 @@ import {
   UInt64,
   MerkleMapWitness,
   MerkleMap,
+  Permissions,
 } from 'snarkyjs';
 
 export class Executor extends SmartContract {
@@ -18,7 +19,11 @@ export class Executor extends SmartContract {
 
   deploy(args: DeployArgs) {
     super.deploy(args);
-    // todo...
+    this.setPermissions({
+      ...Permissions.default(),
+      editState: Permissions.proof(),
+      send: Permissions.proof(),
+    });
   }
 
   init() {
@@ -28,10 +33,9 @@ export class Executor extends SmartContract {
   }
 
   /*
-   Player deposits funds, receieves an IOU from the executor
-   IOU shape is [{balance}, {nonce}]?
-    (need some way to nullify any previous IOU and only count the most recent)
-   This method should increment the contract balance and decrement the player balance
+   Player deposits funds
+   Player must submit a merkle proof of balance
+   New balance will be previous balance + new deposit
   */
   @method
   deposit(
@@ -59,6 +63,32 @@ export class Executor extends SmartContract {
     [witnessRoot, witnessKey] = witness.computeRootAndKey(
       previousBalance.add(amount)
     );
+    this.merkleMapRoot.set(witnessRoot);
+  }
+
+  /*
+   Player withdraws funds
+   Player must submit merkle proof of balance
+   Entire balance will be withdrawn
+  */
+  @method
+  withdraw(player: PublicKey, balance: Field, witness: MerkleMapWitness) {
+    const stateMapRoot = this.merkleMapRoot.get();
+    this.merkleMapRoot.assertEquals(stateMapRoot);
+
+    let witnessRoot: Field;
+    let witnessKey: Field;
+    [witnessRoot, witnessKey] = witness.computeRootAndKey(balance);
+
+    const playerKey = Poseidon.hash(player.toFields());
+
+    // Assert that the merkle map we are pulling out of our hat is valid
+    this.merkleMapRoot.assertEquals(witnessRoot);
+    playerKey.assertEquals(witnessKey);
+
+    this.send({ to: player, amount: new UInt64(balance) });
+
+    [witnessRoot, witnessKey] = witness.computeRootAndKey(Field(0));
     this.merkleMapRoot.set(witnessRoot);
   }
 }
