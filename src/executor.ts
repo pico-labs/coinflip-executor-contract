@@ -6,18 +6,25 @@ import {
   state,
   DeployArgs,
   method,
-  Signature,
-  PrivateKey,
+  AccountUpdate,
+  Poseidon,
+  UInt64,
+  MerkleMapWitness,
+  MerkleMap,
 } from 'snarkyjs';
 
 export class Executor extends SmartContract {
-  @state(PublicKey) randomnessOracle = State<PublicKey>();
-  @state(Field) assets = State<Field>();
-  @state(Field) liabilities = State<Field>();
+  @state(Field) merkleMapRoot = State<Field>();
 
   deploy(args: DeployArgs) {
     super.deploy(args);
     // todo...
+  }
+
+  init() {
+    super.init();
+
+    this.merkleMapRoot.set(new MerkleMap().getRoot());
   }
 
   /*
@@ -29,46 +36,29 @@ export class Executor extends SmartContract {
   @method
   deposit(
     player: PublicKey,
-    amount: number,
-    executorKey: PrivateKey
-  ): Signature {
-    // perform deposit...
-    // ...
-
-    return Signature.create(executorKey, [Field(0), Field(0)]);
-  }
-
-  /*
-   Player withdraws funds
-   Player must submit most recent IOU as proof of balance
-  */
-  @method
-  withdraw(
-    player: PublicKey,
-    iou: Signature,
-    iouBalance: number,
-    iouNonce: number
+    amount: Field,
+    previousBalance: Field,
+    witness: MerkleMapWitness
   ) {
-    const v = iou.verify(this.address, [Field(iouBalance), Field(iouNonce)]);
-    v.assertTrue();
-    // perform withdrawl...
-  }
+    const stateMapRoot = this.merkleMapRoot.get();
+    this.merkleMapRoot.assertEquals(stateMapRoot);
 
-  /*
-   Perform coinflip
-   Player submits encrypted packet from randomness oracle
-   Executor decrypts and verifies the packet
-   Executor updates IOU and returns to player with new balance and nonce
-  */
-  @method
-  flipCoin(
-    player: PublicKey,
-    randomness: Field[],
-    executorKey: PrivateKey
-  ): Signature {
-    // perform flip...
-    // ...
+    let witnessRoot: Field;
+    let witnessKey: Field;
+    [witnessRoot, witnessKey] = witness.computeRootAndKey(previousBalance);
 
-    return Signature.create(executorKey, [Field(0), Field(0)]);
+    const playerKey = Poseidon.hash(player.toFields());
+
+    // Assert that the merkle map we are pulling out of our hat is valid
+    this.merkleMapRoot.assertEquals(witnessRoot);
+    playerKey.assertEquals(witnessKey);
+
+    const depositUpdate = AccountUpdate.create(player);
+    depositUpdate.send({ to: this.address, amount: new UInt64(amount) });
+
+    [witnessRoot, witnessKey] = witness.computeRootAndKey(
+      previousBalance.add(amount)
+    );
+    this.merkleMapRoot.set(witnessRoot);
   }
 }
