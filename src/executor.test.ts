@@ -52,6 +52,9 @@ describe('executor', () => {
       });
       await tx.send();
 
+      const executorBalance = Mina.getBalance(executorAddress);
+      const playerBalance = Mina.getBalance(player1PrivateKey.toPublicKey());
+
       const tx2 = await Mina.transaction(player1PrivateKey, () => {
         executor.deposit(
           player1PrivateKey.toPublicKey(),
@@ -65,6 +68,13 @@ describe('executor', () => {
       await tx2.send();
 
       // test
+      expect(Mina.getBalance(executorAddress).toString()).toBe(
+        executorBalance.add(1000).toString()
+      );
+      expect(Mina.getBalance(player1PrivateKey.toPublicKey()).toString()).toBe(
+        playerBalance.sub(1000).toString()
+      );
+
       const appState = Mina.getAccount(executorAddress).appState;
       expect(appState).not.toBeNull();
 
@@ -89,6 +99,9 @@ describe('executor', () => {
         executor.init();
       });
       await tx.send();
+
+      const executorBalance = Mina.getBalance(executorAddress);
+      const playerBalance = Mina.getBalance(player1PrivateKey.toPublicKey());
 
       const tx2 = await Mina.transaction(deployerPrivateKey, () => {
         executor.deposit(
@@ -117,6 +130,13 @@ describe('executor', () => {
       await tx3.send();
 
       // test
+      expect(Mina.getBalance(executorAddress).toString()).toBe(
+        executorBalance.add(1050).toString()
+      );
+      expect(Mina.getBalance(player1PrivateKey.toPublicKey()).toString()).toBe(
+        playerBalance.sub(1050).toString()
+      );
+
       const appState = Mina.getAccount(executorAddress).appState;
       expect(appState).not.toBeNull();
 
@@ -155,5 +175,67 @@ describe('executor', () => {
     //     await tx2.send();
     //   }).toThrow();
     // });
+  });
+
+  describe('withdraw', () => {
+    it('deposits and withdraws', async () => {
+      // setup
+      const merkleMap = new MerkleMap();
+      const key = Poseidon.hash(player1PrivateKey.toPublicKey().toFields());
+      const witness = merkleMap.getWitness(key);
+      const executor = new Executor(executorAddress);
+
+      const tx = await Mina.transaction(deployerPrivateKey, () => {
+        AccountUpdate.fundNewAccount(deployerPrivateKey);
+        executor.deploy({ zkappKey: executorPrivateKey });
+        executor.init();
+      });
+      await tx.send();
+
+      const executorBalance = Mina.getBalance(executorAddress);
+      const playerBalance = Mina.getBalance(player1PrivateKey.toPublicKey());
+
+      const tx2 = await Mina.transaction(player1PrivateKey, () => {
+        executor.deposit(
+          player1PrivateKey.toPublicKey(),
+          Field(1000),
+          Field(0),
+          witness
+        );
+      });
+      await tx2.prove();
+      tx2.sign([player1PrivateKey]);
+      await tx2.send();
+
+      merkleMap.set(key, Field(1000));
+
+      const tx3 = await Mina.transaction(player1PrivateKey, () => {
+        executor.withdraw(
+          player1PrivateKey.toPublicKey(),
+          Field(1000),
+          witness
+        );
+      });
+      await tx3.prove();
+      await tx3.send();
+
+      //test
+      expect(Mina.getBalance(executorAddress).toString()).toBe(
+        executorBalance.toString()
+      );
+      expect(Mina.getBalance(player1PrivateKey.toPublicKey()).toString()).toBe(
+        playerBalance.toString()
+      );
+
+      const appState = Mina.getAccount(executorAddress).appState;
+      expect(appState).not.toBeNull();
+
+      if (appState) {
+        merkleMap.set(key, Field(0));
+        expect(merkleMap.getRoot().toString()).toBe(appState[0].toString());
+      } else {
+        throw new Error('Should not reach this');
+      }
+    });
   });
 });
