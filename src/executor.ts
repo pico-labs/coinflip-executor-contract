@@ -12,7 +12,10 @@ import {
   MerkleMapWitness,
   MerkleMap,
   Permissions,
+  Signature
 } from 'snarkyjs';
+
+import ChannelBalanceProof from './channelBalanceProof';
 
 export class Executor extends SmartContract {
   @state(Field) merkleMapRoot = State<Field>();
@@ -90,5 +93,28 @@ export class Executor extends SmartContract {
 
     [witnessRoot, witnessKey] = witness.computeRootAndKey(Field(0));
     this.merkleMapRoot.set(witnessRoot);
+  }
+
+  /*
+   Player flips coin
+   Smart contract verifies randomness from Oracle
+  */
+  @method
+  flipCoin(
+    player: PublicKey,
+    stateBalance: Field,
+    witness: MerkleMapWitness,
+    channelBalanceProof: ChannelBalanceProof,
+    playerChosenRandomness: Field,
+    oracleRandomness: Signature
+  ) {
+    const stateMapRoot = this.merkleMapRoot.get();
+    this.merkleMapRoot.assertEquals(stateMapRoot);
+
+    let witnessRoot: Field;
+    let witnessKey: Field;
+    [witnessRoot, witnessKey] = witness.computeRootAndKey(stateBalance);
+
+    const playerKey = Poseidon.hash(player.toFields());
   }
 }
