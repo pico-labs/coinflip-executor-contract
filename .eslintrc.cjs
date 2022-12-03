@@ -14,4 +14,5 @@ module.exports = {
   rules: {
     'no-constant-condition': 'off',
   },
+  ignorePatterns: ['build/*'],
 };
