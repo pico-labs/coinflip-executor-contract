@@ -8,7 +8,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 import { PublicKey, SmartContract, Field, State, state, method, AccountUpdate, Poseidon, UInt64, MerkleMapWitness, MerkleMap, Permissions, Signature, Int64, Circuit, Bool, } from 'snarkyjs';
-import { ChannelBalanceProof } from './channelBalanceProof';
+import { ChannelBalanceProof } from './channelBalanceProof.js';
 export class Executor extends SmartContract {
     constructor() {
         super(...arguments);
@@ -112,4 +112,4 @@ __decorate([
         Signature]),
     __metadata("design:returntype", Int64)
 ], Executor.prototype, "flipCoin", null);
-//# sourceMappingURL=executor.js.map
+//# sourceMappingURL=Executor.js.map

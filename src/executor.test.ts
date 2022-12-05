@@ -12,7 +12,7 @@ import {
   Signature,
 } from 'snarkyjs';
 
-import { Executor } from './executor';
+import { Executor } from './Executor';
 import { ChannelBalanceProof } from './channelBalanceProof';
 
 await isReady;
