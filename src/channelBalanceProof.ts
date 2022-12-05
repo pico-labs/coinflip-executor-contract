@@ -1,8 +1,6 @@
-import {
-  Bool, CircuitValue, Field, Int64, Poseidon, PublicKey, Signature
-} from "snarkyjs";
+import { Bool, Field, Int64, Poseidon, PublicKey, Signature } from 'snarkyjs';
 
-export default class ChannelBalanceProof {
+export class ChannelBalanceProof {
   player: PublicKey;
   executor: PublicKey;
   deltaBalance: Int64;
@@ -20,14 +18,20 @@ export default class ChannelBalanceProof {
     this.nonce = this.nonce.add(1);
   }
 
-  verify<T extends CircuitValue>(sig: Signature): Bool {
-    return sig.verify(
-      this.executor,
-      [
-        Poseidon.hash(this.player.toFields()),
-        this.deltaBalance.toField(),
-        this.nonce
-      ]
-    )
+  verify(sig: Signature): Bool {
+    return sig.verify(this.executor, [
+      Poseidon.hash(this.player.toFields()),
+      this.deltaBalance.toField(),
+      this.nonce,
+    ]);
+  }
+
+  toString(): string {
+    return `{
+      player: ${this.player.toBase58()},
+      excecutor: ${this.executor.toBase58()},
+      deltaBalance: ${this.deltaBalance.toString()},
+      nonce: ${this.nonce.toString()}
+    }`;
   }
 }

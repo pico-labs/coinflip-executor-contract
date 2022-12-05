@@ -12,10 +12,13 @@ import {
   MerkleMapWitness,
   MerkleMap,
   Permissions,
-  Signature
+  Signature,
+  Int64,
+  Circuit,
+  Bool,
 } from 'snarkyjs';
 
-import ChannelBalanceProof from './channelBalanceProof';
+import { ChannelBalanceProof } from './channelBalanceProof';
 
 export class Executor extends SmartContract {
   @state(Field) merkleMapRoot = State<Field>();
@@ -47,25 +50,13 @@ export class Executor extends SmartContract {
     previousBalance: Field,
     witness: MerkleMapWitness
   ) {
-    const stateMapRoot = this.merkleMapRoot.get();
-    this.merkleMapRoot.assertEquals(stateMapRoot);
-
-    let witnessRoot: Field;
-    let witnessKey: Field;
-    [witnessRoot, witnessKey] = witness.computeRootAndKey(previousBalance);
-
-    const playerKey = Poseidon.hash(player.toFields());
-
-    // Assert that the merkle map we are pulling out of our hat is valid
-    this.merkleMapRoot.assertEquals(witnessRoot);
-    playerKey.assertEquals(witnessKey);
+    this.proveState(player, previousBalance, witness);
 
     const depositUpdate = AccountUpdate.create(player);
     depositUpdate.send({ to: this.address, amount: new UInt64(amount) });
 
-    [witnessRoot, witnessKey] = witness.computeRootAndKey(
-      previousBalance.add(amount)
-    );
+    let witnessRoot: Field;
+    witnessRoot = witness.computeRootAndKey(previousBalance.add(amount))[0];
     this.merkleMapRoot.set(witnessRoot);
   }
 
@@ -76,6 +67,61 @@ export class Executor extends SmartContract {
   */
   @method
   withdraw(player: PublicKey, balance: Field, witness: MerkleMapWitness) {
+    this.proveState(player, balance, witness);
+
+    this.send({ to: player, amount: new UInt64(balance) });
+
+    let witnessRoot: Field;
+    witnessRoot = witness.computeRootAndKey(Field(0))[0];
+    this.merkleMapRoot.set(witnessRoot);
+  }
+
+  /*
+   Player flips coin
+   Smart contract verifies randomness from Oracle
+  */
+
+  // TODO: add randomness element(s)
+  @method
+  flipCoin(
+    player: PublicKey,
+    stateBalance: Field,
+    witness: MerkleMapWitness,
+    channelDeltaBalance: Int64,
+    channelNonce: Field,
+    channelBalanceSignature: Signature
+  ): Int64 {
+    this.proveState(player, stateBalance, witness);
+    let channelBalanceProof = new ChannelBalanceProof(player, this.address);
+    channelBalanceProof.deltaBalance = channelDeltaBalance;
+    channelBalanceProof.nonce = channelNonce;
+    channelBalanceProof.player.assertEquals(player);
+    channelBalanceProof.verify(channelBalanceSignature).assertTrue();
+
+    // console.log(`In the method - before: ${channelBalanceProof.toString()}`);
+
+    let trueBalance = channelBalanceProof.deltaBalance.add(
+      Int64.fromField(stateBalance)
+    );
+
+    // TODO: just using 100 as a random value for now, clean this up
+    const isValidFlip = Circuit.if(
+      trueBalance.isPositive(),
+      (() => trueBalance.toField().gt(100))(),
+      (() => Bool(false))()
+    );
+    isValidFlip.assertTrue();
+
+    const flipOutcome = Circuit.if(
+      Bool(false),
+      (() => Int64.fromField(Field(5)))(),
+      (() => Int64.fromField(Field(5)).neg())()
+    );
+
+    return flipOutcome;
+  }
+
+  proveState(player: PublicKey, balance: Field, witness: MerkleMapWitness) {
     const stateMapRoot = this.merkleMapRoot.get();
     this.merkleMapRoot.assertEquals(stateMapRoot);
 
@@ -85,36 +131,7 @@ export class Executor extends SmartContract {
 
     const playerKey = Poseidon.hash(player.toFields());
 
-    // Assert that the merkle map we are pulling out of our hat is valid
     this.merkleMapRoot.assertEquals(witnessRoot);
     playerKey.assertEquals(witnessKey);
-
-    this.send({ to: player, amount: new UInt64(balance) });
-
-    [witnessRoot, witnessKey] = witness.computeRootAndKey(Field(0));
-    this.merkleMapRoot.set(witnessRoot);
-  }
-
-  /*
-   Player flips coin
-   Smart contract verifies randomness from Oracle
-  */
-  @method
-  flipCoin(
-    player: PublicKey,
-    stateBalance: Field,
-    witness: MerkleMapWitness,
-    channelBalanceProof: ChannelBalanceProof,
-    playerChosenRandomness: Field,
-    oracleRandomness: Signature
-  ) {
-    const stateMapRoot = this.merkleMapRoot.get();
-    this.merkleMapRoot.assertEquals(stateMapRoot);
-
-    let witnessRoot: Field;
-    let witnessKey: Field;
-    [witnessRoot, witnessKey] = witness.computeRootAndKey(stateBalance);
-
-    const playerKey = Poseidon.hash(player.toFields());
   }
 }
