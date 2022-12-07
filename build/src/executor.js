@@ -7,12 +7,13 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
-import { PublicKey, SmartContract, Field, State, state, method, AccountUpdate, Poseidon, UInt64, MerkleMapWitness, MerkleMap, Permissions, Signature, Int64, Circuit, Bool, } from 'snarkyjs';
+import { PublicKey, SmartContract, Field, State, state, method, AccountUpdate, Poseidon, UInt64, MerkleMapWitness, MerkleMap, Permissions, Signature, Int64, Circuit, Bool, Encryption, PrivateKey, Group, } from 'snarkyjs';
 import { ChannelBalanceProof } from './channelBalanceProof.js';
 export class Executor extends SmartContract {
     constructor() {
         super(...arguments);
         this.merkleMapRoot = State();
+        this.oraclePublicKey = State();
     }
     deploy(args) {
         super.deploy(args);
@@ -25,6 +26,12 @@ export class Executor extends SmartContract {
     init() {
         super.init();
         this.merkleMapRoot.set(new MerkleMap().getRoot());
+        this.oraclePublicKey.set(PublicKey.empty());
+    }
+    updateRandomnessOracle(executorPrivateKey, newOracle) {
+        const thisAddress = executorPrivateKey.toPublicKey();
+        thisAddress.assertEquals(this.address);
+        this.oraclePublicKey.set(newOracle);
     }
     /*
      Player deposits funds
@@ -56,8 +63,10 @@ export class Executor extends SmartContract {
      Smart contract verifies randomness from Oracle
     */
     // TODO: add randomness element(s)
-    flipCoin(player, stateBalance, witness, channelDeltaBalance, channelNonce, channelBalanceSignature) {
+    flipCoin(player, stateBalance, witness, channelDeltaBalance, channelNonce, channelBalanceSignature, randomnessSignature, encryptionCT1, encryptionCT2, encryptionGroup, executorPrivateKey) {
         this.proveState(player, stateBalance, witness);
+        const oraclePublicKey = this.oraclePublicKey.get();
+        this.oraclePublicKey.assertEquals(oraclePublicKey);
         let channelBalanceProof = new ChannelBalanceProof(player, this.address);
         channelBalanceProof.deltaBalance = channelDeltaBalance;
         channelBalanceProof.nonce = channelNonce;
@@ -65,9 +74,13 @@ export class Executor extends SmartContract {
         channelBalanceProof.verify(channelBalanceSignature).assertTrue();
         // console.log(`In the method - before: ${channelBalanceProof.toString()}`);
         let trueBalance = channelBalanceProof.deltaBalance.add(Int64.fromField(stateBalance));
-        // TODO: just using 100 as a random value for now, clean this up
-        const isValidFlip = Circuit.if(trueBalance.isPositive(), (() => trueBalance.toField().gt(100))(), (() => Bool(false))());
-        isValidFlip.assertTrue();
+        randomnessSignature.verify(oraclePublicKey, [encryptionCT1, encryptionCT2]).assertTrue();
+        const oracleRandomness = Encryption.decrypt({
+            publicKey: encryptionGroup,
+            cipherText: [encryptionCT1, encryptionCT2]
+        }, executorPrivateKey);
+        const isValidFlip = Circuit.if(UInt64.fromFields(oracleRandomness).divMod(2).rest.equals(UInt64.zero), (() => trueBalance.toField().gt(25))(), (() => Bool(false))());
+        isValidFlip.assertTrue('Balance is too low');
         const flipOutcome = Circuit.if(Bool(false), (() => Int64.fromField(Field(5)))(), (() => Int64.fromField(Field(5)).neg())());
         return flipOutcome;
     }
@@ -86,6 +99,17 @@ __decorate([
     state(Field),
     __metadata("design:type", Object)
 ], Executor.prototype, "merkleMapRoot", void 0);
+__decorate([
+    state(PublicKey),
+    __metadata("design:type", Object)
+], Executor.prototype, "oraclePublicKey", void 0);
+__decorate([
+    method,
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [PrivateKey,
+        PublicKey]),
+    __metadata("design:returntype", void 0)
+], Executor.prototype, "updateRandomnessOracle", null);
 __decorate([
     method,
     __metadata("design:type", Function),
@@ -109,7 +133,12 @@ __decorate([
         MerkleMapWitness,
         Int64,
         Field,
-        Signature]),
+        Signature,
+        Signature,
+        Field,
+        Field,
+        Group,
+        PrivateKey]),
     __metadata("design:returntype", Int64)
 ], Executor.prototype, "flipCoin", null);
 //# sourceMappingURL=Executor.js.map

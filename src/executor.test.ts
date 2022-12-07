@@ -10,6 +10,7 @@ import {
   Poseidon,
   Circuit,
   Signature,
+  Encryption,
 } from 'snarkyjs';
 
 import { Executor } from './Executor';
@@ -249,6 +250,8 @@ describe('executor', () => {
       const key = Poseidon.hash(player1PrivateKey.toPublicKey().toFields());
       const witness = merkleMap.getWitness(key);
       const executor = new Executor(executorAddress);
+      const oraclePrivateKey = PrivateKey.random();
+      const oraclePublicKey = oraclePrivateKey.toPublicKey();
 
       const tx = await Mina.transaction(deployerPrivateKey, () => {
         AccountUpdate.fundNewAccount(deployerPrivateKey);
@@ -256,6 +259,12 @@ describe('executor', () => {
         executor.init();
       });
       await tx.send();
+
+      const extraTx = await Mina.transaction(deployerPrivateKey, () => {
+        executor.updateRandomnessOracle(executorPrivateKey, oraclePublicKey);
+      });
+      await extraTx.prove();
+      await extraTx.send();
 
       const tx2 = await Mina.transaction(player1PrivateKey, () => {
         executor.deposit(
@@ -285,19 +294,26 @@ describe('executor', () => {
       ]);
 
       Circuit.runAndCheck(() => {
+        const randEncr = Encryption.encrypt([Field(100)], executorAddress);
+        const randSig = Signature.create(oraclePrivateKey, randEncr.cipherText);
         const incomingDelta = executor.flipCoin(
           player1PrivateKey.toPublicKey(),
           merkleMap.get(key),
           witness,
           channelBalance.deltaBalance,
           channelBalance.nonce,
-          channelBalanceSignature
+          channelBalanceSignature,
+          randSig,
+          randEncr.cipherText[0],
+          randEncr.cipherText[1],
+          randEncr.publicKey,
+          executorPrivateKey
         );
         deltaBalance.add(incomingDelta);
         channelBalance.update(incomingDelta);
       });
 
-      console.log(`balance after 1: ${deltaBalance.toJSON()}`);
+      console.log(`balance after 1: ${JSON.stringify(deltaBalance.toJSON())}`);
 
       channelBalanceSignature = Signature.create(executorPrivateKey, [
         Poseidon.hash(channelBalance.player.toFields()),
@@ -306,13 +322,20 @@ describe('executor', () => {
       ]);
 
       Circuit.runAndCheck(() => {
+        const randEncr = Encryption.encrypt([Field(200)], executorAddress);
+        const randSig = Signature.create(oraclePrivateKey, randEncr.cipherText);
         const incomingDelta = executor.flipCoin(
           player1PrivateKey.toPublicKey(),
           merkleMap.get(key),
           witness,
           channelBalance.deltaBalance,
           channelBalance.nonce,
-          channelBalanceSignature
+          channelBalanceSignature,
+          randSig,
+          randEncr.cipherText[0],
+          randEncr.cipherText[1],
+          randEncr.publicKey,
+          executorPrivateKey
         );
         deltaBalance.add(incomingDelta);
         channelBalance.update(incomingDelta);

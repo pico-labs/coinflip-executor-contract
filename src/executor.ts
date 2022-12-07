@@ -16,12 +16,16 @@ import {
   Int64,
   Circuit,
   Bool,
+  Encryption,
+  PrivateKey,
+  Group,
 } from 'snarkyjs';
 
 import { ChannelBalanceProof } from './channelBalanceProof.js';
 
 export class Executor extends SmartContract {
   @state(Field) merkleMapRoot = State<Field>();
+  @state(PublicKey) oraclePublicKey = State<PublicKey>();
 
   deploy(args: DeployArgs) {
     super.deploy(args);
@@ -36,6 +40,15 @@ export class Executor extends SmartContract {
     super.init();
 
     this.merkleMapRoot.set(new MerkleMap().getRoot());
+    this.oraclePublicKey.set(PublicKey.empty());
+  }
+
+  @method
+  updateRandomnessOracle(executorPrivateKey: PrivateKey, newOracle: PublicKey) {
+    const thisAddress = executorPrivateKey.toPublicKey();
+    thisAddress.assertEquals(this.address);
+
+    this.oraclePublicKey.set(newOracle);
   }
 
   /*
@@ -89,9 +102,17 @@ export class Executor extends SmartContract {
     witness: MerkleMapWitness,
     channelDeltaBalance: Int64,
     channelNonce: Field,
-    channelBalanceSignature: Signature
+    channelBalanceSignature: Signature,
+    randomnessSignature: Signature,
+    encryptionCT1: Field,
+    encryptionCT2: Field,
+    encryptionGroup: Group,
+    executorPrivateKey: PrivateKey
   ): Int64 {
     this.proveState(player, stateBalance, witness);
+    const oraclePublicKey = this.oraclePublicKey.get();
+    this.oraclePublicKey.assertEquals(oraclePublicKey);
+
     let channelBalanceProof = new ChannelBalanceProof(player, this.address);
     channelBalanceProof.deltaBalance = channelDeltaBalance;
     channelBalanceProof.nonce = channelNonce;
@@ -104,13 +125,24 @@ export class Executor extends SmartContract {
       Int64.fromField(stateBalance)
     );
 
-    // TODO: just using 100 as a random value for now, clean this up
+    randomnessSignature
+      .verify(oraclePublicKey, [encryptionCT1, encryptionCT2])
+      .assertTrue();
+
+    const oracleRandomness = Encryption.decrypt(
+      {
+        publicKey: encryptionGroup,
+        cipherText: [encryptionCT1, encryptionCT2],
+      },
+      executorPrivateKey
+    );
+
     const isValidFlip = Circuit.if(
-      trueBalance.isPositive(),
-      (() => trueBalance.toField().gt(100))(),
+      UInt64.fromFields(oracleRandomness).divMod(2).rest.equals(UInt64.zero),
+      (() => trueBalance.toField().gt(25))(),
       (() => Bool(false))()
     );
-    isValidFlip.assertTrue();
+    isValidFlip.assertTrue('Balance is too low');
 
     const flipOutcome = Circuit.if(
       Bool(false),
