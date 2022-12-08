@@ -15,13 +15,12 @@ import {
   Signature,
   Int64,
   Circuit,
-  Bool,
   Encryption,
   PrivateKey,
   Group,
 } from 'snarkyjs';
 
-import { ChannelBalanceProof } from './channelBalanceProof.js';
+import { ChannelBalanceProof } from './channelBalanceProof';
 
 export class Executor extends SmartContract {
   @state(Field) merkleMapRoot = State<Field>();
@@ -67,6 +66,7 @@ export class Executor extends SmartContract {
 
     const depositUpdate = AccountUpdate.create(player);
     depositUpdate.send({ to: this.address, amount: new UInt64(amount) });
+    depositUpdate.requireSignature();
 
     let witnessRoot: Field;
     witnessRoot = witness.computeRootAndKey(previousBalance.add(amount))[0];
@@ -93,8 +93,6 @@ export class Executor extends SmartContract {
    Player flips coin
    Smart contract verifies randomness from Oracle
   */
-
-  // TODO: add randomness element(s)
   @method
   flipCoin(
     player: PublicKey,
@@ -108,7 +106,7 @@ export class Executor extends SmartContract {
     encryptionCT2: Field,
     encryptionGroup: Group,
     executorPrivateKey: PrivateKey
-  ): Int64 {
+  ): [Int64, Field[]] {
     this.proveState(player, stateBalance, witness);
     const oraclePublicKey = this.oraclePublicKey.get();
     this.oraclePublicKey.assertEquals(oraclePublicKey);
@@ -119,11 +117,12 @@ export class Executor extends SmartContract {
     channelBalanceProof.player.assertEquals(player);
     channelBalanceProof.verify(channelBalanceSignature).assertTrue();
 
-    // console.log(`In the method - before: ${channelBalanceProof.toString()}`);
-
     let trueBalance = channelBalanceProof.deltaBalance.add(
       Int64.fromField(stateBalance)
     );
+
+    const isValidFlip = trueBalance.toField().gt(Field(25));
+    isValidFlip.assertTrue('Balance is too low');
 
     randomnessSignature
       .verify(oraclePublicKey, [encryptionCT1, encryptionCT2])
@@ -137,20 +136,13 @@ export class Executor extends SmartContract {
       executorPrivateKey
     );
 
-    const isValidFlip = Circuit.if(
-      UInt64.fromFields(oracleRandomness).divMod(2).rest.equals(UInt64.zero),
-      (() => trueBalance.toField().gt(25))(),
-      (() => Bool(false))()
-    );
-    isValidFlip.assertTrue('Balance is too low');
-
     const flipOutcome = Circuit.if(
-      Bool(false),
+      UInt64.fromFields(oracleRandomness).divMod(2).rest.equals(UInt64.zero),
       (() => Int64.fromField(Field(5)))(),
       (() => Int64.fromField(Field(5)).neg())()
     );
 
-    return flipOutcome;
+    return [flipOutcome, oracleRandomness];
   }
 
   proveState(player: PublicKey, balance: Field, witness: MerkleMapWitness) {
