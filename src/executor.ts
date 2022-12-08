@@ -20,7 +20,7 @@ import {
   Group,
 } from 'snarkyjs';
 
-import { ChannelBalanceProof } from './channelBalanceProof';
+import { ChannelBalanceProof } from './channelBalanceProof.js';
 
 export class Executor extends SmartContract {
   @state(Field) merkleMapRoot = State<Field>();
