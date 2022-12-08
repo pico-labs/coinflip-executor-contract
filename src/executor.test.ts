@@ -8,12 +8,14 @@ import {
   MerkleMap,
   Field,
   Poseidon,
-  // Circuit,
-  // Signature,
+  Circuit,
+  Signature,
+  Encryption,
+  Int64,
 } from 'snarkyjs';
 
-import { Executor } from './Executor';
-// import { ChannelBalanceProof } from './channelBalanceProof';
+import { Executor } from './executor';
+import { ChannelBalanceProof } from './channelBalanceProof';
 
 await isReady;
 await Executor.compile();
@@ -150,34 +152,6 @@ describe('executor', () => {
         throw new Error('Should not reach this');
       }
     });
-
-    // it('cannot handle multiple updates within the same block', async () => {
-    //   // setup
-    //   const merkleMap = new MerkleMap();
-    //   const key1 = Poseidon.hash(player1PrivateKey.toPublicKey().toFields());
-    //   const key2 = Poseidon.hash(player2PrivateKey.toPublicKey().toFields());
-    //   const witness1 = merkleMap.getWitness(key1);
-    //   const witness2 = merkleMap.getWitness(key2);
-    //   const executor = new Executor(executorAddress);
-
-    //   const tx = await Mina.transaction(deployerPrivateKey, () => {
-    //     AccountUpdate.fundNewAccount(deployerPrivateKey);
-    //     executor.deploy({ zkappKey: executorPrivateKey });
-    //     executor.init();
-    //   });
-    //   await tx.send();
-
-    //   // test
-    //   await expect(async () => {
-    //     const tx2 = await Mina.transaction(deployerPrivateKey, () => {
-    //       executor.deposit(player1PrivateKey.toPublicKey(), Field(1000), Field(0), witness1)
-    //       executor.deposit(player2PrivateKey.toPublicKey(), Field(500), Field(0), witness2)
-    //     });
-    //     await tx2.prove();
-    //     tx2.sign([player1PrivateKey, player2PrivateKey]);
-    //     await tx2.send();
-    //   }).toThrow();
-    // });
   });
 
   describe('withdraw', () => {
@@ -242,95 +216,136 @@ describe('executor', () => {
     });
   });
 
-  // describe('flipCoin', () => {d
-  //   it('flips a coin', async () => {
-  //     // setup
-  //     const merkleMap = new MerkleMap();
-  //     const key = Poseidon.hash(player1PrivateKey.toPublicKey().toFields());
-  //     const witness = merkleMap.getWitness(key);
-  //     const executor = new Executor(executorAddress);
+  describe('flipCoin', () => {
+    it('flips a coin', async () => {
+      // setup
+      const merkleMap = new MerkleMap();
+      const key = Poseidon.hash(player1PrivateKey.toPublicKey().toFields());
+      const witness = merkleMap.getWitness(key);
+      const executor = new Executor(executorAddress);
+      const oraclePrivateKey = PrivateKey.random();
+      const oraclePublicKey = oraclePrivateKey.toPublicKey();
 
-  //     const tx = await Mina.transaction(deployerPrivateKey, () => {
-  //       AccountUpdate.fundNewAccount(deployerPrivateKey);
-  //       executor.deploy({ zkappKey: executorPrivateKey });
-  //       executor.init();
-  //     });
-  //     await tx.send();
+      const tx = await Mina.transaction(deployerPrivateKey, () => {
+        AccountUpdate.fundNewAccount(deployerPrivateKey);
+        executor.deploy({ zkappKey: executorPrivateKey });
+        executor.init();
+      });
+      await tx.send();
 
-  //     const tx2 = await Mina.transaction(player1PrivateKey, () => {
-  //       executor.deposit(
-  //         player1PrivateKey.toPublicKey(),
-  //         Field(1000),
-  //         Field(0),
-  //         witness
-  //       );
-  //     });
-  //     await tx2.prove();
-  //     tx2.sign([player1PrivateKey]);
-  //     await tx2.send();
+      const extraTx = await Mina.transaction(deployerPrivateKey, () => {
+        executor.updateRandomnessOracle(executorPrivateKey, oraclePublicKey);
+      });
+      await extraTx.prove();
+      await extraTx.send();
 
-  //     merkleMap.set(key, Field(1000));
+      const tx2 = await Mina.transaction(player1PrivateKey, () => {
+        executor.deposit(
+          player1PrivateKey.toPublicKey(),
+          Field(1000),
+          Field(0),
+          witness
+        );
+      });
+      await tx2.prove();
+      tx2.sign([player1PrivateKey]);
+      await tx2.send();
 
-  //     let channelBalance = new ChannelBalanceProof(
-  //       player1PrivateKey.toPublicKey(),
-  //       executorAddress
-  //     );
+      merkleMap.set(key, Field(1000));
 
-  //     let deltaBalance = channelBalance.deltaBalance;
+      let channelBalance = new ChannelBalanceProof(
+        player1PrivateKey.toPublicKey(),
+        executorAddress
+      );
 
-  //     let channelBalanceSignature = Signature.create(executorPrivateKey, [
-  //       Poseidon.hash(channelBalance.player.toFields()),
-  //       channelBalance.deltaBalance.toField(),
-  //       channelBalance.nonce,
-  //     ]);
+      let deltaBalance = channelBalance.deltaBalance;
 
-  //     Circuit.runAndCheck(() => {
-  //       const incomingDelta = executor.flipCoin(
-  //         player1PrivateKey.toPublicKey(),
-  //         merkleMap.get(key),
-  //         witness,
-  //         channelBalance.deltaBalance,
-  //         channelBalance.nonce,
-  //         channelBalanceSignature
-  //       );
-  //       deltaBalance.add(incomingDelta);
-  //       channelBalance.update(incomingDelta);
-  //     });
+      let channelBalanceSignature = Signature.create(executorPrivateKey, [
+        Poseidon.hash(channelBalance.player.toFields()),
+        channelBalance.deltaBalance.toField(),
+        channelBalance.nonce,
+      ]);
 
-  //     console.log(`balance after 1: ${deltaBalance.toJSON()}`);
+      let incomingDelta: Int64;
+      let randomNumber: Field[];
+      Circuit.runAndCheck(() => {
+        const randEncr = Encryption.encrypt([Field(100)], executorAddress);
+        const randSig = Signature.create(oraclePrivateKey, randEncr.cipherText);
+        [incomingDelta, randomNumber] = executor.flipCoin(
+          player1PrivateKey.toPublicKey(),
+          merkleMap.get(key),
+          witness,
+          channelBalance.deltaBalance,
+          channelBalance.nonce,
+          channelBalanceSignature,
+          randSig,
+          randEncr.cipherText[0],
+          randEncr.cipherText[1],
+          randEncr.publicKey,
+          executorPrivateKey
+        );
+        console.log(`Incoming Delta Balance: ${incomingDelta.toString()}`);
+        deltaBalance = deltaBalance.add(incomingDelta);
+        channelBalance.update(incomingDelta);
+        expect(randomNumber.toString()).toBe('100');
+        expect(incomingDelta.toString()).toBe('5');
+      });
 
-  //     channelBalanceSignature = Signature.create(executorPrivateKey, [
-  //       Poseidon.hash(channelBalance.player.toFields()),
-  //       deltaBalance.toField(),
-  //       Field(1),
-  //     ]);
+      console.log(
+        `balance after 1: ${JSON.stringify(channelBalance.toString())}`
+      );
 
-  //     Circuit.runAndCheck(() => {
-  //       const incomingDelta = executor.flipCoin(
-  //         player1PrivateKey.toPublicKey(),
-  //         merkleMap.get(key),
-  //         witness,
-  //         channelBalance.deltaBalance,
-  //         channelBalance.nonce,
-  //         channelBalanceSignature
-  //       );
-  //       deltaBalance.add(incomingDelta);
-  //       channelBalance.update(incomingDelta);
-  //     });
+      channelBalanceSignature = Signature.create(executorPrivateKey, [
+        Poseidon.hash(channelBalance.player.toFields()),
+        deltaBalance.toField(),
+        Field(1),
+      ]);
 
-  //     // Circuit.runAndCheck(() => {
-  //     //   channelBalance.deltaBalance = channelBalance.deltaBalance.add(100); // try to cheat
+      Circuit.runAndCheck(() => {
+        const randEncr = Encryption.encrypt([Field(987999)], executorAddress);
+        const randSig = Signature.create(oraclePrivateKey, randEncr.cipherText);
+        [incomingDelta, randomNumber] = executor.flipCoin(
+          player1PrivateKey.toPublicKey(),
+          merkleMap.get(key),
+          witness,
+          channelBalance.deltaBalance,
+          channelBalance.nonce,
+          channelBalanceSignature,
+          randSig,
+          randEncr.cipherText[0],
+          randEncr.cipherText[1],
+          randEncr.publicKey,
+          executorPrivateKey
+        );
+        console.log(`Incoming Delta Balance: ${incomingDelta.toString()}`);
+        deltaBalance = deltaBalance.add(incomingDelta);
+        channelBalance.update(incomingDelta);
+        expect(randomNumber.toString()).toBe('987999');
+        expect(incomingDelta.toString()).toBe('-5');
+      });
 
-  //     //   // should fail
-  //     //   executor.flipCoin(
-  //     //     player1PrivateKey.toPublicKey(),
-  //     //     merkleMap.get(key),
-  //     //     witness,
-  //     //     channelBalance.deltaBalance,
-  //     //     channelBalance.nonce,
-  //     //     channelBalanceSignature
-  //     //   )
-  //     // });
-  //   });
-  // });
+      Circuit.runAndCheck(() => {
+        const randEncr = Encryption.encrypt([Field(1)], executorAddress);
+        const randSig = Signature.create(oraclePrivateKey, randEncr.cipherText);
+        channelBalance.deltaBalance = channelBalance.deltaBalance.add(100); // try to cheat
+
+        // should fail
+        expect(() => {
+          executor.flipCoin(
+            player1PrivateKey.toPublicKey(),
+            merkleMap.get(key),
+            witness,
+            channelBalance.deltaBalance,
+            channelBalance.nonce,
+            channelBalanceSignature,
+            randSig,
+            randEncr.cipherText[0],
+            randEncr.cipherText[1],
+            randEncr.publicKey,
+            executorPrivateKey
+          );
+        }).toThrow();
+      });
+    });
+  });
 });

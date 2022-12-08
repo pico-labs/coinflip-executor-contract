@@ -1,3 +1,3 @@
-import { Executor } from './Executor';
+import { Executor } from './executor.js';
 
 export { Executor };
