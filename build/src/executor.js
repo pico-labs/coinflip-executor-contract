@@ -112,4 +112,4 @@ __decorate([
         Signature]),
     __metadata("design:returntype", Int64)
 ], Executor.prototype, "flipCoin", null);
-//# sourceMappingURL=Executor.js.map
+//# sourceMappingURL=executor.js.map

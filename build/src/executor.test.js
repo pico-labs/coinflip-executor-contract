@@ -2,7 +2,7 @@ import { isReady, shutdown, Mina, PrivateKey, AccountUpdate, MerkleMap, Field, P
 // Circuit,
 // Signature,
  } from 'snarkyjs';
-import { Executor } from './Executor';
+import { Executor } from './executor.js';
 // import { ChannelBalanceProof } from './channelBalanceProof';
 await isReady;
 await Executor.compile();
@@ -243,4 +243,4 @@ describe('executor', () => {
     //   });
     // });
 });
-//# sourceMappingURL=Executor.test.js.map
+//# sourceMappingURL=executor.test.js.map
