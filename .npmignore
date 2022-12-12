@@ -1,5 +1,9 @@
 # TypeScript files
 src
+keys
+.github
+.husky
+jest*
 
 # Editor
 .vscode
