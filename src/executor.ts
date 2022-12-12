@@ -51,38 +51,56 @@ export class Executor extends SmartContract {
   }
 
   /*
-   Player deposits funds
-   Player must submit a merkle proof of balance
-   New balance will be previous balance + new deposit
+   Player adds collateral
+   Player must submit a merkle proof of existing collateral
+   Collateral will become previous collateral + new collateral
   */
   @method
-  deposit(
+  addCollateral(
     player: PublicKey,
     amount: Field,
-    previousBalance: Field,
+    previousCollateral: Field,
     witness: MerkleMapWitness
   ) {
-    this.proveState(player, previousBalance, witness);
+    this.proveState(player, previousCollateral, witness);
 
     const depositUpdate = AccountUpdate.create(player);
     depositUpdate.send({ to: this.address, amount: new UInt64(amount) });
     depositUpdate.requireSignature();
 
     let witnessRoot: Field;
-    witnessRoot = witness.computeRootAndKey(previousBalance.add(amount))[0];
+    witnessRoot = witness.computeRootAndKey(previousCollateral.add(amount))[0];
     this.merkleMapRoot.set(witnessRoot);
   }
 
   /*
-   Player withdraws funds
-   Player must submit merkle proof of balance
-   Entire balance will be withdrawn
+   Player removes collateral
+   Player must submit a merkle proof of existing collateral
+   Player must sumbit a signed message from the executor with delta (winnings or losings) from flips
+   Entire collateral will be removed, adjusted by the delta
   */
   @method
-  withdraw(player: PublicKey, balance: Field, witness: MerkleMapWitness) {
-    this.proveState(player, balance, witness);
+  removeCollateral(
+    player: PublicKey,
+    collateral: Field,
+    witness: MerkleMapWitness,
+    channelDeltaBalance: Int64,
+    channelNonce: Field,
+    channelBalanceSignature: Signature
+  ) {
+    this.proveState(player, collateral, witness);
 
-    this.send({ to: player, amount: new UInt64(balance) });
+    let channelBalanceProof = new ChannelBalanceProof(player, this.address);
+    channelBalanceProof.deltaBalance = channelDeltaBalance;
+    channelBalanceProof.nonce = channelNonce;
+    channelBalanceProof.player.assertEquals(player);
+    channelBalanceProof.verify(channelBalanceSignature).assertTrue();
+
+    const withdrawAmount = channelBalanceProof.deltaBalance.add(
+      UInt64.from(collateral)
+    );
+    withdrawAmount.isPositive().assertTrue();
+    this.send({ to: player, amount: withdrawAmount.magnitude });
 
     let witnessRoot: Field;
     witnessRoot = witness.computeRootAndKey(Field(0))[0];
@@ -91,7 +109,11 @@ export class Executor extends SmartContract {
 
   /*
    Player flips coin
-   Smart contract verifies randomness from Oracle
+   Executor verifies the current payment channel balance
+   Executor verifies the randomness from oracle
+   Executor decrypts the randomness from oracle
+   Executor credits or debits the player in the payment channel
+   @returns [the credit or debit amoutnt: Int64, the random number, recovered from the oracle: Field]
   */
   @method
   flipCoin(
@@ -106,7 +128,7 @@ export class Executor extends SmartContract {
     encryptionCT2: Field,
     encryptionGroup: Group,
     executorPrivateKey: PrivateKey
-  ): [Int64, Field[]] {
+  ): [Int64, Field] {
     this.proveState(player, stateBalance, witness);
     const oraclePublicKey = this.oraclePublicKey.get();
     this.oraclePublicKey.assertEquals(oraclePublicKey);
@@ -142,7 +164,7 @@ export class Executor extends SmartContract {
       (() => Int64.fromField(Field(5)).neg())()
     );
 
-    return [flipOutcome, oracleRandomness];
+    return [flipOutcome, oracleRandomness[0]];
   }
 
   proveState(player: PublicKey, balance: Field, witness: MerkleMapWitness) {

@@ -42,8 +42,8 @@ describe('executor', () => {
     setTimeout(shutdown, 0);
   });
 
-  describe('deposit', () => {
-    it('sets initial balance', async () => {
+  describe('addCollateral', () => {
+    it('adds first collateral', async () => {
       // setup
       const merkleMap = new MerkleMap();
       const key = Poseidon.hash(player1PrivateKey.toPublicKey().toFields());
@@ -61,7 +61,7 @@ describe('executor', () => {
       const playerBalance = Mina.getBalance(player1PrivateKey.toPublicKey());
 
       const tx2 = await Mina.transaction(player1PrivateKey, () => {
-        executor.deposit(
+        executor.addCollateral(
           player1PrivateKey.toPublicKey(),
           Field(1000),
           Field(0),
@@ -91,7 +91,7 @@ describe('executor', () => {
       }
     });
 
-    it('increases existing balance', async () => {
+    it('adds another round of collateral', async () => {
       // setup
       const merkleMap = new MerkleMap();
       const key = Poseidon.hash(player1PrivateKey.toPublicKey().toFields());
@@ -109,7 +109,7 @@ describe('executor', () => {
       const playerBalance = Mina.getBalance(player1PrivateKey.toPublicKey());
 
       const tx2 = await Mina.transaction(deployerPrivateKey, () => {
-        executor.deposit(
+        executor.addCollateral(
           player1PrivateKey.toPublicKey(),
           Field(1000),
           Field(0),
@@ -123,7 +123,7 @@ describe('executor', () => {
       merkleMap.set(key, Field(1000));
 
       const tx3 = await Mina.transaction(deployerPrivateKey, () => {
-        executor.deposit(
+        executor.addCollateral(
           player1PrivateKey.toPublicKey(),
           Field(50),
           Field(1000),
@@ -154,8 +154,8 @@ describe('executor', () => {
     });
   });
 
-  describe('withdraw', () => {
-    it('deposits and withdraws', async () => {
+  describe('removeCollateral', () => {
+    it('adds and removes collateral', async () => {
       // setup
       const merkleMap = new MerkleMap();
       const key = Poseidon.hash(player1PrivateKey.toPublicKey().toFields());
@@ -173,7 +173,7 @@ describe('executor', () => {
       const playerBalance = Mina.getBalance(player1PrivateKey.toPublicKey());
 
       const tx2 = await Mina.transaction(player1PrivateKey, () => {
-        executor.deposit(
+        executor.addCollateral(
           player1PrivateKey.toPublicKey(),
           Field(1000),
           Field(0),
@@ -186,16 +186,27 @@ describe('executor', () => {
 
       merkleMap.set(key, Field(1000));
 
+      const channelBalanceSignature = Signature.create(executorPrivateKey, [
+        Poseidon.hash(player1PrivateKey.toPublicKey().toFields()),
+        Int64.from(0).toField(),
+        Field(0),
+      ]);
+
+      console.log('try');
       const tx3 = await Mina.transaction(player1PrivateKey, () => {
-        executor.withdraw(
+        executor.removeCollateral(
           player1PrivateKey.toPublicKey(),
           Field(1000),
-          witness
+          witness,
+          Int64.from(0),
+          Field(0),
+          channelBalanceSignature
         );
       });
       await tx3.prove();
       await tx3.send();
 
+      console.log('succeed');
       //test
       expect(Mina.getBalance(executorAddress).toString()).toBe(
         executorBalance.toString()
@@ -240,7 +251,7 @@ describe('executor', () => {
       await extraTx.send();
 
       const tx2 = await Mina.transaction(player1PrivateKey, () => {
-        executor.deposit(
+        executor.addCollateral(
           player1PrivateKey.toPublicKey(),
           Field(1000),
           Field(0),
@@ -267,7 +278,7 @@ describe('executor', () => {
       ]);
 
       let incomingDelta: Int64;
-      let randomNumber: Field[];
+      let randomNumber: Field;
       Circuit.runAndCheck(() => {
         const randEncr = Encryption.encrypt([Field(100)], executorAddress);
         const randSig = Signature.create(oraclePrivateKey, randEncr.cipherText);
