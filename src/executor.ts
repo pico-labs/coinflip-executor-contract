@@ -31,7 +31,7 @@ export class Executor extends SmartContract {
     this.setPermissions({
       ...Permissions.default(),
       editState: Permissions.proof(),
-      send: Permissions.proof(),
+      send: Permissions.proofOrSignature(),
     });
   }
 
