@@ -96,11 +96,21 @@ export class Executor extends SmartContract {
     channelBalanceProof.player.assertEquals(player);
     channelBalanceProof.verify(channelBalanceSignature).assertTrue();
 
-    const withdrawAmount = channelBalanceProof.deltaBalance.add(
-      UInt64.from(collateral)
+    const withdrawAmount = Circuit.if(
+      channelBalanceProof.deltaBalance.isPositive(),
+      (() =>
+        UInt64.from(collateral).add(
+          channelBalanceProof.deltaBalance.magnitude
+        ))(),
+      (() =>
+        UInt64.from(collateral).sub(
+          channelBalanceProof.deltaBalance.magnitude
+        ))()
     );
-    withdrawAmount.isPositive().assertTrue();
-    this.send({ to: player, amount: withdrawAmount.magnitude });
+
+    this.account.balance.assertBetween(withdrawAmount, UInt64.MAXINT());
+
+    this.send({ to: player, amount: withdrawAmount });
 
     let witnessRoot: Field;
     witnessRoot = witness.computeRootAndKey(Field(0))[0];
