@@ -1,8 +1,10 @@
 # Mina zkApp: Coinflip Executor Contract
 
 This repo is part of a submission to [ZK Ignite Cohort 0](https://minaprotocol.com/blog/zkignite-cohort0_), with these related repositories:
-- https://github.com/pico-labs/coinflip-frontend
-- https://github.com/pico-labs/randomness-oracle
+- UI: https://github.com/pico-labs/coinflip-frontend
+- Oracle: https://github.com/pico-labs/randomness-oracle
+
+The deployed project can be viewed at https://coinflip-frontend-ruby.vercel.app/
 
 ## How to build
 
@@ -42,6 +44,30 @@ This solution works because the player has the right to examine the randomness o
 2. The player then flips coins as many times as they want, receiving signed balance messages from the contract
 	1. Extra benefit of this is scalability - no waiting for blocktimes!
 3. When the player has had enough, they withdraw their initial collateral plus or minus the amount that they've won or lost playing the game
+
+## Mina Components in Use to Power this App
+### Storage
+We store a merkle map of user accounts to stored collateral, and a public key of the trusted oracle on chain.
+
+Off chain storage is saved on redis.  The state of the app can change from any user interaction, so we write the value of every local version of the merkle tree to redis, keyed by its root hash.  When a new player loads the app, we can load the value of the merkle tree be referencing the root hash on chain against our redis cache of all known trees.
+
+### Oracle
+We have an oracle which supplies randomness for the app
+
+### Custom Proof Class
+We define the `ChannelBalanceProof` which is valid if a given signature input is valid for a given payment channel.
+
+### Signatures and Encryption
+This app makes use of signature verification and encryption/decryption to ensure that all parites behave honestly when communicating.  This prevents users from lying about the random number, spying on the random number, or lying about their balance.
+
+### Conditional logic
+Based on the result of a coin flip, we either deduct 5 or add 5 tokens to the user's balance
+
+### Sending Mina
+This app actually transfers funds for certain types of transactions (add collateral and remove collateral)
+
+### Tricky Math
+We deal with Int64 and UInt64 values which have the potential to get signs reversed, overflow if not dealt with carefully.
 
 ## License
 
