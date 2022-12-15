@@ -42,12 +42,22 @@ export class Executor extends SmartContract {
     this.oraclePublicKey.set(PublicKey.empty());
   }
 
+  // do not push [X]
   @method
   updateRandomnessOracle(executorPrivateKey: PrivateKey, newOracle: PublicKey) {
     const thisAddress = executorPrivateKey.toPublicKey();
     thisAddress.assertEquals(this.address);
 
     this.oraclePublicKey.set(newOracle);
+  }
+
+  @method
+  resetMerkleRoot(executorPrivateKey: PrivateKey) {
+    const thisAddress = executorPrivateKey.toPublicKey();
+    thisAddress.assertEquals(this.address);
+
+    const emptyState = new MerkleMap();
+    this.merkleMapRoot.set(emptyState.getRoot());
   }
 
   /*
